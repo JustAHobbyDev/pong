@@ -9,6 +9,7 @@ import rl "vendor:raylib"
 GameState :: struct {
     window_size: rl.Vector2,
     paddle: rl.Rectangle,
+    ai_paddle: rl.Rectangle,
     paddle_speed: f32,
     ball: rl.Rectangle,
     ball_dir: rl.Vector2,
@@ -17,6 +18,7 @@ GameState :: struct {
 
 reset :: proc(using gs: ^GameState) {
     angle := rand.float32_range(-45, 46)
+    if rand.int_max(100) % 2 == 0 do angle += 180
     r := math.to_radians(angle)
 
     ball_dir.x = math.cos(r)
@@ -25,14 +27,34 @@ reset :: proc(using gs: ^GameState) {
     ball.x = window_size.x / 2 - ball.width / 2
     ball.y = window_size.y / 2 - ball.height / 2
 
-    paddle.x = window_size.x - 80
+    paddle_margin: f32 = 50
+
+    paddle.x = window_size.x - (paddle.width + paddle_margin)
     paddle.y = window_size.y / 2 - paddle.height / 2
+
+    ai_paddle.x = paddle_margin
+    ai_paddle.y = window_size.y / 2 - paddle.height / 2
 }
 
+calculate_ball_direction :: proc(ball: rl.Rectangle, paddle: rl.Rectangle) -> (rl.Vector2, bool) {
+        if (rl.CheckCollisionRecs(ball, paddle)) {
+            ball_center := rl.Vector2 {
+                ball.x + ball.width / 2,
+                ball.y + ball.height / 2,
+            }
+            paddle_center := rl.Vector2{
+                paddle.x + paddle.width / 2,
+                paddle.y + paddle.height / 2,
+            }
+            return linalg.normalize0(ball_center - paddle_center), true
+        }
+    return {}, false
+}
 main :: proc() {
     gs := GameState {
         window_size = {1280, 720},
         paddle = {width = 30, height = 80},
+        ai_paddle = {width = 30, height = 80},
         paddle_speed = 10,
         ball = {width = 30, height = 30},
         ball_speed = 10,
@@ -40,12 +62,6 @@ main :: proc() {
     reset(&gs)
 
     using gs
-    // ball := rl.Rectangle{100, 150, 30, 30}
-    // ball_dir := rl.Vector2{0, -1}
-    // ball_speed : f32 = 10
-    // pos : i32 = 10
-    // pos2 : i32 = 150
-    // ball_height : i32 = 30
 
     rl.InitWindow(i32(window_size.x), i32(window_size.y), "Pong")
     rl.SetTargetFPS(60)
@@ -59,6 +75,15 @@ main :: proc() {
         }
 
         paddle.y = linalg.clamp(paddle.y, 0, window_size.y - paddle.height)
+        diff := ai_paddle.y + ai_paddle.height / 2 - ball.y + ball.height / 2
+        if diff > 0 {
+            ai_paddle.y -= paddle_speed
+        }
+        if diff < 0 {
+            ai_paddle.y += paddle_speed
+        }
+        
+        ai_paddle.y = linalg.clamp(ai_paddle.y, 0, window_size.y - ai_paddle.height)
 
         next_ball_rec := ball
         next_ball_rec.x += ball_speed * ball_dir.x
@@ -67,17 +92,9 @@ main :: proc() {
         if (next_ball_rec.y + next_ball_rec.height) > 720 || next_ball_rec.y <= 0 {
             ball_dir.y *= -1
         }
-        if (rl.CheckCollisionRecs(next_ball_rec, paddle)) {
-            ball_center := rl.Vector2 {
-                next_ball_rec.x + ball.width / 2,
-                next_ball_rec.y + ball.height / 2,
-            }
-            paddle_center := rl.Vector2{
-                paddle.x + paddle.width / 2,
-                paddle.y + paddle.height / 2,
-            }
-            ball_dir = linalg.normalize0(ball_center - paddle_center)
-        }
+
+        ball_dir = calculate_ball_direction(next_ball_rec, paddle) or_else ball_dir
+        ball_dir = calculate_ball_direction(next_ball_rec, ai_paddle) or_else ball_dir
 
         if next_ball_rec.x >= window_size.x - ball.width {
             reset(&gs)
@@ -93,6 +110,7 @@ main :: proc() {
         rl.ClearBackground(rl.BLACK)
 
         rl.DrawRectangleRec(paddle, rl.WHITE)
+        rl.DrawRectangleRec(ai_paddle, rl.WHITE)
         rl.DrawRectangleRec(ball, rl.RED)
         // rl.DrawText(fmt.ctprintf("%v", pos), pos + 25, 55, 22, rl.WHITE)
 
